@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+import sys
+import os
+
+import decimal
+from scapy.all import *
+
+from source.lib import *
+from source.parser import *
+
+
+def main():
+    try:
+        pcap_file = sys.argv[1]
+        Output.folder = sys.argv[2]
+        create_folder(Output.folder, subfolder=False)
+        for subfolder in ['stream', 'source', 'destination', 'protocol', 'dport']:
+            create_folder(subfolder)
+    except:
+        traceback.print_exc()
+        help()
+        sys.exit(1)
+        
+    for override in sys.argv[3:]:
+        proto, _, port = override.partition(':')
+        if port.isdigit() and proto in layer7_dict.keys():
+            layer7_dict[proto][1].append(int(port))
+        
+    if run_command('tshark --help')[0] != 0:
+        print('Cannot run tshark', file=sys.stderr)
+        sys.exit(1)
+    
+    # run tshark statistics
+    #   tshark hosts
+    save_result('hosts', run_command(f'tshark -r {pcap_file} -q -z hosts'))
+    save_result('credentials', run_command(f'tshark -r {pcap_file} -q -z credentials'))
+
+    # parse the pcap, get dicts
+    parser = Parser(pcap_file)
+
+    stream_overview = []
+    unknown_overview = []
+    # deal with streams
+    for i, (stream, packets) in enumerate(parser.packets.by('stream').items()):
+        name = f'stream/{i}'
+        
+        # prepare basic overview
+        stream_overview.append(f'Stream:      {i}')
+        stream_overview.append(f'Source:      {format_ip(stream[1])}:{stream[2]}')
+        stream_overview.append(f'Destination: {format_ip(stream[3])}:{stream[4]}')
+        
+        # try to parse individual protocols
+        matching_proto = [k for k,v in layer7_dict.items() 
+                          if v[0] == layer4_dict.get(stream[0])
+                          and stream[4] in v[1]]
+        if 'telnet' in matching_proto:
+            payload = follow_all(packets)
+            save_data(name, payload)
+            symlinks(name, 'telnet', stream)
+            stream_overview.append(f'Parsed as:   telnet')
+            print(f'Created {name} as telnet.')
+        if 'smtp' in matching_proto:
+            #client_data = follow_client(stream, packets)
+            ra = Reassembler(stream, packets)
+            print(ra)
+            
+        # TODO more protocols here
+        else:
+            # TODO also save all payload?
+            unknown_overview.append(f'{stream[1]} -> {stream[3]} ({layer4_dict.get(stream[0])}/{stream[4]})')
+            stream_overview.append(f'Parsed as:   UNKNOWN')
+        
+        # TODO report unknown ports detected
+        # prepare detailed statistics
+        upstream = [p for p in packets if layer3(p).src == stream[1] and layer4(p).sport == stream[2]]
+        downstream = [p for p in packets if layer3(p).src == stream[3] and layer4(p).sport == stream[4]]
+        packets_upstream = len(upstream)
+        packets_downstream = len(downstream)
+        stream_overview.append(f'Packets:     {len(packets)} ({packets_upstream}/{packets_downstream})')
+        data = sum(len(layer4(p).payload) for p in packets)
+        data_upstream = sum(len(layer4(p).payload) for p in upstream)
+        data_downstream = sum(len(layer4(p).payload) for p in downstream)
+        stream_overview.append(f'Data bytes:  {data} B ({data_upstream}/{data_downstream})')
+        total = sum(p.wirelen for p in packets)
+        total_upstream = sum(p.wirelen for p in upstream)
+        total_downstream = sum(p.wirelen for p in downstream)
+        stream_overview.append(f'Total bytes: {total} B ({total_upstream}/{total_downstream})')
+        
+        start = datetime.fromtimestamp(int(packets[0].time)) #strftime('%Y-%m-%d %H:%M:%S', float(packets[0].time))
+        end = datetime.fromtimestamp(int(packets[-1].time))
+        duration = packets[-1].time - packets[0].time
+        stream_overview.append(f'Start:       {start}')
+        stream_overview.append(f'End:         {end}')
+        stream_overview.append(f'Duration:    {duration} s')
+        try:
+            stream_overview.append(f'Speed:       {format_kbps(total, duration)} kbps ({format_kbps(total_upstream, duration)}/{format_kbps(total_downstream, duration)})')
+        except decimal.DivisionByZero:
+            pass
+        
+        stream_overview.append('-' * 40)
+    if stream_overview:
+        save_data('stream_overview', '\n'.join(stream_overview) + '\n')
+    if unknown_overview:
+        save_data('unknown_overview', '\n'.join(unknown_overview) + '\n')
+    
+
+def help():
+    print(f'Usage: {sys.argv[0]} <pcap> <output_folder> [<protocol>:<port> ...]', file=sys.stderr)
+
+if __name__ == "__main__":
+    main()
