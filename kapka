@@ -43,7 +43,6 @@ def main():
     # deal with streams
     for i, (stream, packets) in enumerate(parser.packets.by('stream').items()):
         name = f'stream/{i}'
-        
         # prepare basic overview
         stream_overview.append(f'Stream:      {i}')
         stream_overview.append(f'Source:      {format_ip(stream[1])}:{stream[2]}')
@@ -61,8 +60,40 @@ def main():
             print(f'Created {name} as telnet.')
         if 'smtp' in matching_proto:
             #client_data = follow_client(stream, packets)
-            ra = Reassembler(stream, packets)
-            print(ra)
+            ra = TCPReassembler(stream, packets)
+            #print(ra)
+            # TODO split individual multiparts and unbase64 if possible?
+            try:
+                use_current = False
+                if ra.matches(is_server=False, regex=b'^DATA\\r\\n$'):
+                    use_current = True
+                while True:
+                    if not use_current:
+                        use_current = False
+                        ra.next(is_server=False, regex=b'^DATA\\r\\n$')
+                    data = ra.next(is_server=False).get()[1]
+                    if not data.endswith(b'\r\n.\r\n'):
+                        print('[!] Incomplete DATA (no trailing dot present).', file=sys.stderr)
+                    try:
+                        alt_name = None
+                        response = ra.next(is_server=True).get()[1].strip()
+                        if b'250 ok' in response.lower():
+                            email_id = response.rpartition(b'=')[2].decode()
+                            alt_name = f'{i}_{email_id}.eml'
+                    except IndexError:
+                        pass
+                    except:
+                        traceback.print_exc()
+                    #print(f'will save {name}, data:')
+                    #print(data)
+                    save_data(name, data)
+                    symlinks(name, 'smtp', stream, alt_name)
+
+            except IndexError: # no more emails in the stream
+                break
+            except:
+                traceback.print_exc()
+                break
             
         # TODO more protocols here
         else:

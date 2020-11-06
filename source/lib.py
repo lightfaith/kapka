@@ -38,7 +38,7 @@ def save_data(path, data, formatter=lambda x: x):
 def format_kbps(data_len, duration):
     return data_len * 8 // duration / 1000
 
-def symlinks(source, protocol, stream):
+def symlinks(source, protocol, stream, protocol_altname=None):
     subfolders = []
     proto = layer4_dict.get(stream[0])
     if proto:
@@ -48,10 +48,17 @@ def symlinks(source, protocol, stream):
     subfolders.append(f'destination/{stream[3]}')
     for subfolder in subfolders:
         create_folder(subfolder)
-        dest = os.path.join(Output.folder, subfolder, os.path.basename(source))
+        # allow alternative name for symlinks (e.g. mail id for SMTP)
+        dest_name = (protocol_altname 
+                     if (protocol_altname and subfolder.startswith('protocol/')) 
+                     else os.path.basename(source))
+        dest = os.path.join(Output.folder, subfolder, dest_name)
         relative_source = os.path.relpath(os.path.join(Output.folder, source), 
                                  start=os.path.join(Output.folder, subfolder))
-        os.symlink(relative_source, dest)
+        try:
+            os.symlink(relative_source, dest)
+        except FileExistsError:
+            pass
 
 layer3 = lambda packet: (packet[IP]
 		       if packet.haslayer(IP)
@@ -81,41 +88,6 @@ follow_server = lambda stream, packets: b''.join(bytes(layer4(p).payload)
                                                  for p in packets
                                                  if layer3(p).src == stream[3]
                                                  and layer4(p).sport == stream[4])
-
-class Reassembler:
-    """
-    class holds ordered reassembled chunks and allows to travel back and forth
-    """
-    def __init__(self, stream, packets):
-        self.chunks = [] # (is_server, data)
-
-        tmp_data = []
-        tmp_is_server = None
-        for p in packets:
-            is_server = layer3(p).src == stream[3] and layer4(p).sport == stream[4]
-            if is_server != tmp_is_server:
-                # change of communication direction
-                joined = b''.join(tmp_data)
-                if joined:
-                    # any data from the previous chunk? store and flush tmp
-                    self.chunks.append((tmp_is_server, joined))
-                    tmp_data = []
-                elif self.chunks:
-                    # useless interruption, continue with previous chunk
-                    tmp_data = [self.chunks.pop()[1]]
-                tmp_is_server = is_server
-            # push bytes into tmp
-            if (isinstance(layer4(p).payload, Raw)
-                    and not isinstance(layer4(p).payload, Padding)): # TODO other types?
-                tmp_data.append(bytes(layer4(p).payload))
-
-    def __str__(self):
-        result = ''
-        for i, (is_server, data) in enumerate(self.chunks):
-            result += f'{i}: {"server" if is_server else "client"}\n'
-            result += str(data)
-            result += '\n\n'
-        return result
 
 
 
