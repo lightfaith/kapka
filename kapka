@@ -61,22 +61,23 @@ def main():
             print(f'Created {name} as telnet.')
 
         if 'smtp' in matching_proto:
-            #client_data = follow_client(stream, packets)
             ra = TCPReassembler(stream, packets)
-            #print(ra)
             # TODO split individual multiparts and unbase64 if possible?
             try:
                 use_current = False
                 if ra.matches(is_server=False, regex=b'^DATA\\r\\n$'):
                     use_current = True
                 while True:
+                    # find DATA section
                     if not use_current:
                         use_current = False
                         ra.next(is_server=False, regex=b'^DATA\\r\\n$')
+                    # get email content
                     data = ra.next(is_server=False).get()[1]
                     if not data.endswith(b'\r\n.\r\n'):
                         print('[!] Incomplete DATA (no trailing dot present).', file=sys.stderr)
                     try:
+                        # try to get email ID
                         alt_name = None
                         response = ra.next(is_server=True).get()[1].strip()
                         if b'250 ok' in response.lower():
@@ -86,8 +87,7 @@ def main():
                         pass
                     except:
                         traceback.print_exc()
-                    #print(f'will save {name}, data:')
-                    #print(data)
+                    # save files
                     save_data(name, data)
                     symlinks(name, 'smtp', stream, alt_name)
                 stream_overview.append(f'Parsed as:   smtp')

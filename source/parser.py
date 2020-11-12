@@ -100,7 +100,6 @@ class TCPReassembler: # TODO get general stuff into generalized class
             # TODO can we do integrity check for the chunk somehow?
             self.chunks.append((is_server, byte_chunk))
 
-        
     
     def seek_start(self):
         self.pointer = 0
