@@ -88,14 +88,12 @@ class TCPReassembler: # TODO get general stuff into generalized class
 
         # for each list of packets (chunks-to-be) do SEQ reassembling
         for is_server, packets in packet_chunks:
-            print(is_server)
             seq_offset = min(p[TCP].seq for p in packets)
             real_chunk_size = max(p[TCP].seq + len(p[TCP].payload) for p in packets) - seq_offset
             byte_chunk = bytearray(b'\x00' * real_chunk_size)
             for packet in packets:
                 start = packet[TCP].seq - seq_offset
                 end = start + len(packet[TCP].payload)
-                print(' ', start, end)
                 byte_chunk[start:end] = bytes(packet[TCP].payload)
             # TODO can we do integrity check for the chunk somehow?
             self.chunks.append((is_server, byte_chunk))

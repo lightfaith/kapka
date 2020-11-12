@@ -7,14 +7,14 @@ from scapy.all import *
 
 from source.lib import *
 from source.parser import *
-
+from source.extractors import *
 
 def main():
     try:
         pcap_file = sys.argv[1]
         Output.folder = sys.argv[2]
         create_folder(Output.folder, subfolder=False)
-        for subfolder in ['stream', 'source', 'destination', 'protocol', 'dport']:
+        for subfolder in ['stream', 'source', 'destination', 'protocol', 'dport', 'extracted']:
             create_folder(subfolder)
     except:
         traceback.print_exc()
@@ -72,12 +72,14 @@ def main():
                     if not use_current:
                         use_current = False
                         ra.next(is_server=False, regex=b'^DATA\\r\\n$')
+                    
                     # get email content
                     data = ra.next(is_server=False).get()[1]
                     if not data.endswith(b'\r\n.\r\n'):
                         print('[!] Incomplete DATA (no trailing dot present).', file=sys.stderr)
+                    
+                    # try to get email ID
                     try:
-                        # try to get email ID
                         alt_name = None
                         response = ra.next(is_server=True).get()[1].strip()
                         if b'250 ok' in response.lower():
@@ -87,9 +89,19 @@ def main():
                         pass
                     except:
                         traceback.print_exc()
+                    
                     # save files
                     save_data(name, data)
                     symlinks(name, 'smtp', stream, alt_name)
+                    
+                    # extract multiparts
+                    extractor = SMTPExtractor(data)
+                    if extractor.content:
+                        create_folder(f'extracted/{i}')
+                    for name, data in extractor.content.items():
+                        name = f'extracted/{i}/{name.decode()}'
+                        save_data(name, data)
+                    
                 stream_overview.append(f'Parsed as:   smtp')
 
             except IndexError: # no more emails in the stream
