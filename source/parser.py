@@ -64,12 +64,13 @@ class TCPReassembler: # TODO get general stuff into generalized class
 
         tmp_packets = []
         tmp_is_server = None
-        
+
+        # gather lists of packets with regards to communication direction changes
+        # filter out interruptions (ACKs etc.)
         for p in packets:
+            # is communication direction changed?
             is_server = layer3(p).src == stream[3] and layer4(p).sport == stream[4]
-            
             if is_server != tmp_is_server:
-                # change of communication direction
                 if tmp_packets:
                     # any data from the previous chunk? store and flush tmp
                     packet_chunks.append((tmp_is_server, tmp_packets))
@@ -78,35 +79,27 @@ class TCPReassembler: # TODO get general stuff into generalized class
                     # useless interruption, continue with previous chunk
                     tmp_packets = packet_chunks.pop()[1]
                 tmp_is_server = is_server
-            # push packets into tmp
+
+            # add chunk into seq_chunk
             if (isinstance(layer4(p).payload, Raw) 
                 and not isinstance(layer4(p).payload, Padding)): # TODO other types?
                 tmp_packets.append(p)
+                
 
-        # now sort those chunks, ditch duplicate seqs and get payloads
-        # TODO do with seq anyway?
+        # for each list of packets (chunks-to-be) do SEQ reassembling
         for is_server, packets in packet_chunks:
-            fixed_packets = []
-            seqs = []
-            
-            for i, p in enumerate(packets):
-                new_seq = layer4(p).seq
-                if new_seq in seqs:
-                    fixed_packets = [x for x in fixed_packets if x.seq != new_seq]
-                else:
-                    seqs.append(layer4(p).seq)
-                fixed_packets.append(p)
-            fixed_packets.sort(key=lambda p: layer4(p).seq)
-            for p in fixed_packets:
-                """#
-                if isinstance(layer4(p).payload, Raw):
-                    if len(layer4(p).payload) > 30:
-                        print('S' if is_server else 'C', bytes(layer4(p).payload)[:15].replace(b'\r\n', b'\\r\\n'), '...', bytes(layer4(p).payload)[-15:].replace(b'\r\n', b'\\r\\n'))
-                    else:
-                        print('S' if is_server else 'C', bytes(layer4(p).payload).replace(b'\r\n', b'\\r\\n'))
-                """#
-            data = b''.join(bytes(layer4(p).payload) for p in fixed_packets)
-            self.chunks.append((is_server, data))
+            print(is_server)
+            seq_offset = min(p[TCP].seq for p in packets)
+            real_chunk_size = max(p[TCP].seq + len(p[TCP].payload) for p in packets) - seq_offset
+            byte_chunk = bytearray(b'\x00' * real_chunk_size)
+            for packet in packets:
+                start = packet[TCP].seq - seq_offset
+                end = start + len(packet[TCP].payload)
+                print(' ', start, end)
+                byte_chunk[start:end] = bytes(packet[TCP].payload)
+            # TODO can we do integrity check for the chunk somehow?
+            self.chunks.append((is_server, byte_chunk))
+
         
     
     def seek_start(self):

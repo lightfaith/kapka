@@ -47,6 +47,7 @@ def main():
         stream_overview.append(f'Stream:      {i}')
         stream_overview.append(f'Source:      {format_ip(stream[1])}:{stream[2]}')
         stream_overview.append(f'Destination: {format_ip(stream[3])}:{stream[4]}')
+        stream_overview.append(f'Layer 4:     {layer4_dict.get(stream[0]).upper() or "UNKNOWN"}')
         
         # try to parse individual protocols
         matching_proto = [k for k,v in layer7_dict.items() 
@@ -58,6 +59,7 @@ def main():
             symlinks(name, 'telnet', stream)
             stream_overview.append(f'Parsed as:   telnet')
             print(f'Created {name} as telnet.')
+
         if 'smtp' in matching_proto:
             #client_data = follow_client(stream, packets)
             ra = TCPReassembler(stream, packets)
@@ -88,9 +90,10 @@ def main():
                     #print(data)
                     save_data(name, data)
                     symlinks(name, 'smtp', stream, alt_name)
+                stream_overview.append(f'Parsed as:   smtp')
 
             except IndexError: # no more emails in the stream
-                break
+                pass
             except:
                 traceback.print_exc()
                 break
