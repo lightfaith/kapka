@@ -100,7 +100,7 @@ def main():
                         create_folder(f'extracted/{i}')
                     for name, data in extractor.content.items():
                         name = f'extracted/{i}/{name.decode()}'
-                        save_data(name, data)
+                        save_data(name, data, prefix='  ')
                     
                 stream_overview.append(f'Parsed as:   smtp')
 

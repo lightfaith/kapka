@@ -4,6 +4,7 @@ Various multipart extractors are here.
 """
 import pdb
 import traceback
+from source.lib import *
 
 class Extractor:
     def __init__(self, data):
@@ -17,7 +18,6 @@ class SMTPExtractor(Extractor):
         start_boundaries = []
         end_boundaries = []
         self.content = {}
-
         # find main Content-Type header
         lines = self.data.split(b'\n')
         for i, line in enumerate(lines):
@@ -25,17 +25,23 @@ class SMTPExtractor(Extractor):
                 break
             if line.startswith(b'Content-Type:'):
                 content_type = line.partition(b': ')[2].partition(b';')[0]
-                try:
-                    boundary = lines[i+1].partition(b'=')[2].strip().strip(b'"')
-                    start_boundaries.append(b'--' + boundary)
-                    end_boundaries.append(b'--' + boundary + b'--')
-                except:
-                    break
+                # found boundary that should be nearby
+                content_type_lines = [line]
+                for j in range(i, len(lines)):
+                    if lines[j].startswith((b' ', b'\t')):
+                        content_type_lines.append(lines[j])
+                    else:
+                        break
+                content_type_directives = b' '.join(content_type_lines).split(b';')
+                for ctd in content_type_directives:
+                    key, _, value = ctd.partition(b'=')
+                    if key.strip() == b'boundary':
+                        boundary = value.strip().strip(b'"')
+                        start_boundaries.append(b'--' + boundary)
+                        end_boundaries.append(b'--' + boundary + b'--')
 
         if content_type == b'multipart/mixed':
-            if boundary:
-                start_boundary = b'--' + boundary
-                end_boundary = start_boundary + b'--'
+            if start_boundaries:
 
                 part_lines = []
                 in_part = False
@@ -68,10 +74,12 @@ class SMTPExtractor(Extractor):
                                 pass
                             elif part_content_transfer_encoding == b'quoted-printable':
                                 pass
+                            elif part_content_transfer_encoding == b'base64':
+                                data = base64.b64decode(data)
                             else:
-                                print('Unknown Content-Transfer-Encoding {part_content_transfer_encoding}, treating as raw.')
+                                print(f'Unknown Content-Transfer-Encoding {part_content_transfer_encoding}, treating as raw.')
                             # store gathered
-                            print(f'saving {part_name}: "{data[:5]}...{data[-5:]}"')
+                            #print(f'saving {part_name}: "{data[:5]}...{data[-5:]}"')
                             self.content[part_name] = data
 
                     # actually start of new part
@@ -97,12 +105,14 @@ class SMTPExtractor(Extractor):
                                 part_content_transfer_encoding = colon_part[2].partition(b';')[0]
                             elif colon_part[0] == b'Content-Disposition':
                                 part_content_disposition = colon_part[2].partition(b';')[0]
-                            else:
-                                eq_part = jline.partition(b'=')
-                                if eq_part[0] in (b'name', b'filename'):
-                                    part_name = eq_part[2].strip(b'"')
-                                if eq_part[0] == b'boundary' and part_content_type.startswith(b'multipart/'):
-                                    boundary = eq_part[2].strip(b'"')
+                            # find specific directives (ignoring header, but it seems good enough)
+                            directives = jline.split(b';')
+                            for directive in directives:
+                                eq_part = directive.partition(b'=')
+                                if eq_part[0].strip() in (b'name', b'filename'):
+                                    part_name = eq_part[2].strip().strip(b'"')
+                                if eq_part[0].strip() == b'boundary' and part_content_type.startswith(b'multipart/'):
+                                    boundary = eq_part[2].strip().strip(b'"')
                                     start_boundaries.append(b'--' + boundary)
                                     end_boundaries.append(b'--' + boundary + b'--')
                         #print(f'continuing with i {skip_until}')

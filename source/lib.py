@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import subprocess
 import os
+import base64
 from scapy.all import *
 
 class Output:
@@ -28,11 +29,11 @@ def save_result(path, command_result, formatter=lambda x: x):
     with open(os.path.join(Output.folder, path), 'wb') as f:
         f.write(formatter(out))
 
-def save_data(path, data, formatter=lambda x: x):
+def save_data(path, data, formatter=lambda x: x, prefix=''):
     if isinstance(data, str):
         data = data.encode()
     with open(os.path.join(Output.folder, path), 'wb') as f:
-        print(f.name)
+        print(prefix+f.name)
         f.write(formatter(data))
 
 def format_kbps(data_len, duration):
