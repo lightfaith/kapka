@@ -28,7 +28,7 @@ class SMTPExtractor(Extractor):
                 # found boundary that should be nearby
                 content_type_lines = [line]
                 for j in range(i, len(lines)):
-                    if lines[j].startswith((b' ', b'\t')):
+                    if i == j or lines[j].startswith((b' ', b'\t')):
                         content_type_lines.append(lines[j])
                     else:
                         break
