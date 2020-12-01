@@ -55,18 +55,9 @@ class Packets:
 
 
     def add(self, packets):
+        debug('Adding packets for data extraction.', indent=2)
         self.packets = packets
         # TODO get time and choose time chunk size
-        for packet in self.packets:
-            """
-            # run preselect part 1
-            for category, (f1, _) in self.preselect_extractors.items():
-                if not self.dicts.get(category):
-                    self.dicts[category] = {}
-                extracted = f1(packet)
-                if extracted and not self.dicts[category].get(extracted):
-                    self.dicts[category][extracted] = []
-            """
         for packet in self.packets:
             # run normal extractors
             for category, (extract, support_data) in self.extractors.items():
@@ -75,6 +66,7 @@ class Packets:
                 try:
                     key = extract(packet, support_data or [])
                 except AttributeError:
+                    traceback.print_exc() # 
                     continue
                 except:
                     traceback.print_exc()
@@ -89,7 +81,7 @@ class Packets:
                 extracted = f1(packet)
                 if extracted and f2(packet, self.dicts[category].keys()):
                     self.dicts[category][extracted].append(packet)
-            """     
+            """
 
         
     def test(self): # TODO delete
@@ -105,6 +97,11 @@ class Packets:
         returns lists of packets by desired key
         usage: smtp = packets.by('anyport', 25)
         """
+        if value:
+            debug(f'Getting packet sets by {key}: {value}...')
+        else:
+            debug(f'Getting packet sets by {key}...')
+
         if value is None:
             try:
                 return self.dicts[key]
@@ -118,5 +115,7 @@ class Packets:
         try:
             return self.dicts[key][value]
         except KeyError:
+            traceback.print_exc()
             return []
         return []
+

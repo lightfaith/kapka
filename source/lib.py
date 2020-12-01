@@ -8,6 +8,7 @@ class Output:
     folder = ''
 
 def run_command(command):
+    debug(f'Running {command}')
     p = subprocess.Popen(command,
                          shell=True,
                          #stdin=subprocess.PIPE,
@@ -28,6 +29,7 @@ def save_result(path, command_result, formatter=lambda x: x):
     #print(output_folder, returncode, out, err)
     with open(os.path.join(Output.folder, path), 'wb') as f:
         f.write(formatter(out))
+    debug(f'... saved as {path}.', indent=2)
 
 def save_data(path, data, formatter=lambda x: x, prefix=''):
     if isinstance(data, str):
@@ -60,6 +62,14 @@ def symlinks(source, protocol, stream, protocol_altname=None):
             os.symlink(relative_source, dest)
         except FileExistsError:
             pass
+
+flags = {
+    '-d': False,
+}
+
+def debug(*args, indent=0, **kwargs):
+    if flags.get('-d'):
+        print(' ' * indent, '\033[90m', *args, '\033[00m', **kwargs)
 
 layer3 = lambda packet: (packet[IP]
 		       if packet.haslayer(IP)

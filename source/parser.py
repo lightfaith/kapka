@@ -9,7 +9,18 @@ class Parser:
     Parser takes care of parsing pcap into Scapy structures. 
     Packets() object allows queries by many distinct keys
     """
+    def unify_directional_streams(streams):
+        """
+        lower port is probably the server
+        """
+        result = set()
+        for s in streams:
+            directions = [s, (s[0], s[3], s[4], s[1], s[2])]
+            result.add(sorted(directions, key=lambda x: x[4])[0])
+        return result
+
     def __init__(self, pcap_file):
+        debug(f'Parsing {pcap_file}')
         self.pcap_content = rdpcap(pcap_file)
         self.packets = Packets()
         
@@ -18,13 +29,21 @@ class Parser:
         self.packets.add_extractor('daddr', lambda packet, _: layer3(packet).dst)
         self.packets.add_extractor('sport', lambda packet, _: layer4(packet).sport)
         self.packets.add_extractor('dport', lambda packet, _: layer4(packet).dport)
+        """
         tcp_servers = set([(layer3(p).src, layer4(p).sport) 
                        for p in self.pcap_content 
                        if p.haslayer(TCP) and p[TCP].flags == 0x12])
         streams = set([get_socket(p)
                        for p in self.pcap_content
                        if p.haslayer(UDP) or (p.haslayer(TCP) and p[TCP].flags == 0x2)])
+        """
+        streams = Parser.unify_directional_streams(
+            set([get_socket(p)
+                for p in self.pcap_content
+                if p.haslayer(UDP) or p.haslayer(TCP)]))
         
+        tcp_servers = [(s[3], s[4]) for s in streams if s[0] == 6]
+
         self.packets.add_extractor('serversocket',
                                    lambda packet, data: ((layer3(packet).src, layer4(packet).sport) 
                                                          if (layer3(packet).src, layer4(packet).sport) in data
@@ -44,10 +63,9 @@ class Parser:
         self.packets.add(self.pcap_content)
         self.packets.concat_dicts('anyport', ('sport', 'dport'))
 
-        #for category, _ in self.packets.extractors.items():
-        #    for k,v in self.packets.dicts[category].items():
-        #        print(category, k, len(v))
-        #print('total', len(self.packets.packets))
+        debug(f'processed {len(self.pcap_content)} packets.', indent=2)
+        debug(f'processed {len(tcp_servers)} TCP servers.', indent=2)
+        debug(f'processed {len(streams)} streams.', indent=2)
         # TODO remove pcap_content to save memory?
         # TODO or do bulk processing?
 
@@ -67,6 +85,7 @@ class TCPReassembler: # TODO get general stuff into generalized class
 
         # gather lists of packets with regards to communication direction changes
         # filter out interruptions (ACKs etc.)
+        debug('Reassembling stream...', indent=2)
         for p in packets:
             # is communication direction changed?
             is_server = layer3(p).src == stream[3] and layer4(p).sport == stream[4]
@@ -109,6 +128,7 @@ class TCPReassembler: # TODO get general stuff into generalized class
 
     def matches(self, is_server=None, regex=None):
         # client/server condition is not satisfied?
+        #print(self.chunks[self.pointer][1][:50])
         if is_server is not None and is_server != self.chunks[self.pointer][0]:
             return False
         # regex does not match?
