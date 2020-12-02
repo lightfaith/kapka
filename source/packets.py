@@ -21,7 +21,6 @@ class Packets:
     """
     def __init__(self):
         self.packets = [] # original list of packets, parsed by scapy
-        # TODO how about reassembling?
         self.dicts = {} # key: list of matching packets
         self.extractors = {} # key: function to extract it from a packet
         #self.preselect_extractors = {} # key: (function to extract candidate from packet,

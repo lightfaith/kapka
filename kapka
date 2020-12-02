@@ -39,8 +39,10 @@ def main():
     
     # run tshark statistics
     #   tshark hosts
-    save_result('hosts', run_command(f'tshark -r {pcap_file} -q -z hosts'))
-    save_result('credentials', run_command(f'tshark -r {pcap_file} -q -z credentials'))
+    save_result('tshark_hosts', run_command(f'tshark -r {pcap_file} -q -z hosts'))
+    save_result('tshark_credentials', run_command(f'tshark -r {pcap_file} -q -z credentials'))
+
+    credentials = set()
 
     # parse the pcap, get dicts
     parser = Parser(pcap_file)
@@ -64,6 +66,7 @@ def main():
                           and stream[4] in v[1]]
         parsed_as = ''
         if 'telnet' in matching_proto:
+            # TODO try to extract credentials
             debug('Parsing as telnet.', indent=2)
             payload = follow_all(packets)
             save_data(name, payload)
@@ -71,6 +74,7 @@ def main():
             parsed_as = 'telnet'
 
         if 'smtp' in matching_proto:
+            # TODO extract credentials
             debug('Parsing as smtp.', indent=2)
             ra = TCPReassembler(stream, packets)
             try:
@@ -126,10 +130,15 @@ def main():
         if 'imap' in matching_proto:
             debug('Parsing as imap.', indent=2)
             ra = TCPReassembler(stream, packets)
-            mailbox_name = b'mailbox_name'
+            #mailbox_name = b'unknown_mailbox'
             fetched = {}
+
+            debug('Finding all mailbox lines...', indent=4)
+            mailbox_lines = ra.find_all(is_server=False, regex=b'\\w+ LOGIN ".*" ".*"')
+            for x in mailbox_lines:
+                print(x)
+
             try:
-                # TODO get mailbox name (and password)
                 use_current = False 
                 if ra.matches(is_server=True, regex=b'^\\* \\d+ FETCH '):
                     use_current = True
@@ -140,6 +149,16 @@ def main():
                     else:
                         ra.next(is_server=True, regex=b'^\\* \\d+ FETCH ')
                     
+                    # find last previous mailbox line
+                    try:
+                        last_mailbox_line = [x for x in mailbox_lines if ra > x][-1]
+                        imap_credentials = re.match(b'\\w+ LOGIN "(.*)" "(.*)"', ra.get(last_mailbox_line)[1])
+                        mailbox_name = imap_credentials.group(1)
+                        mailbox_password = imap_credentials.group(2)
+                        credentials.add(f'{mailbox_name.decode()}:{mailbox_password.decode()}')
+                    except IndexError:
+                        mailbox_name = b'unknown_mailbox'
+
                     # split messages
                     full_message = ra.get()[1]
                     string_index = 0
@@ -241,6 +260,9 @@ def main():
         save_data('stream_overview', '\n'.join(stream_overview) + '\n')
     if unknown_overview:
         save_data('unknown_overview', '\n'.join(unknown_overview) + '\n')
+
+    if credentials:
+        save_data('credentials', '\n'.join(sorted(credentials)) + '\n')
     
 
 def help():

@@ -164,8 +164,29 @@ class TCPReassembler: # TODO get general stuff into generalized class
     def previous(self, is_server=None, regex=None, current=False, lookonly=False):
         return self._step_(-1, is_server, regex, current, lookonly) 
 
-    def get(self):
-        return self.chunks[self.pointer]
+    def get(self, pointer=None):
+        if pointer is None:
+            pointer = self.pointer
+        return self.chunks[pointer]
+
+    def find_all(self, is_server=None, regex=None):
+        matches = []
+        current_pointer = self.pointer
+        self.seek_start()
+        
+        use_current = True
+        try:
+            self.next(is_server=is_server, regex=regex, current=True)
+            matches.append(self.pointer)
+            while True:
+                self.next(is_server=is_server, regex=regex)
+                matches.append(self.pointer)
+        except IndexError:
+            pass
+
+        self.pointer = current_pointer
+        return matches
+
 
     def __str__(self):
         result = ''
@@ -175,5 +196,28 @@ class TCPReassembler: # TODO get general stuff into generalized class
             result += '\n\n'
         return result
 
-    
+    def __lt__(self, other):
+        if isinstance(other, int):
+            return self.pointer < other
+        else:
+            return self.pointer < other.pointer
+            
+    def __le__(self, other):
+        if isinstance(other, int):
+            return self.pointer <= other
+        else:
+            return self.pointer <= other.pointer
+
+    def __gt__(self, other):
+        if isinstance(other, int):
+            return self.pointer > other
+        else:
+            return self.pointer > other.pointer
+
+    def __ge__(self, other):
+        if isinstance(other, int):
+            return self.pointer >= other
+        else:
+            return self.pointer >= other.pointer
+
 
